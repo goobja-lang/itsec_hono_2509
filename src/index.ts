@@ -1,11 +1,8 @@
 import { serve } from "@hono/node-server";
 import { Hono } from "hono";
 import { AppDataSource } from "./data-source1.js";
-import boardRouter from "./router/board_router.js";
 
 const app = new Hono();
-
-app.route("/board", boardRouter);
 
 /** DB 연결 */
 AppDataSource.initialize()
@@ -20,6 +17,9 @@ AppDataSource.initialize()
 app.get("/", (c) => {
   return c.text("Hello Hono!");
 });
+
+import board from "./router/board_router.js";
+app.route("/api/board", board);
 
 serve(
   {
