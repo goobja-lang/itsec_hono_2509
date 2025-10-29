@@ -135,4 +135,74 @@ router.post("/login", async (c) => {
   }
 });
 
+router.post("/login_v2", async (c) => {
+  let result: ResultType = {
+    success: true,
+    data: null,
+    msg: "",
+  };
+  try {
+    /*
+    profileUrl: string;
+  uid: string;
+  email: string;
+  displayName: string;
+  providerId: string;
+  metadata: string;
+     */
+    const body = await c?.req?.parseBody();
+
+    let profileUrl = String(body["profileUrl"] ?? "");
+    profileUrl = profileUrl?.trim() ?? "";
+    let uid = String(body["uid"] ?? "");
+    uid = uid?.trim() ?? "";
+    let email = String(body["email"] ?? "");
+    email = email?.trim() ?? "";
+    let displayName = String(body["displayName"] ?? "");
+    displayName = displayName?.trim() ?? "";
+    let providerId = String(body["providerId"] ?? "");
+    providerId = providerId?.trim() ?? "";
+    let metadata = String(body["metadata"] ?? "");
+    metadata = metadata?.trim() ?? "";
+
+    if (!uid || !providerId) {
+      result.success = false;
+      result.msg = `잘못된 로그인 정보 입니다`;
+      return c.json(result);
+    }
+
+    const userRepo = AppDataSource.getRepository(TUser);
+
+    let user =
+      (await userRepo.findOne({
+        where: { uid: uid },
+      })) ?? new TUser();
+    // user 라는 객체에 데이터 채워져 있어? 아니면 아무것도 없어?
+    if (!user?.uid) {
+      user.profileUrl = profileUrl;
+      user.uid = uid;
+      if (email) user.email = utils.encryptData(email);
+      user.displayName = displayName;
+      user.providerId = providerId;
+      user.metadata = metadata;
+      user = await userRepo.save(user);
+    }
+
+    // 순수한 JSObject 로 변환
+    user = JSON.parse(JSON.stringify(user));
+
+    let token = utils.generateToken(user, "90d");
+    if (token) token = utils.encryptData(token);
+    result.data = {
+      userInfo: user,
+      token: token,
+    };
+    return c.json(result);
+  } catch (error: any) {
+    result.success = false;
+    result.msg = `서버 에러. ${error?.message}`;
+    return c.json(result);
+  }
+});
+
 export default router;
