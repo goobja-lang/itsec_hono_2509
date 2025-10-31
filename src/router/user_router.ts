@@ -188,6 +188,7 @@ router.post("/login_v2", async (c) => {
       user = await userRepo.save(user);
     }
 
+    if (user.email) user.email = utils.decryptData(user.email);
     // 순수한 JSObject 로 변환
     user = JSON.parse(JSON.stringify(user));
 
@@ -197,6 +198,36 @@ router.post("/login_v2", async (c) => {
       userInfo: user,
       token: token,
     };
+    return c.json(result);
+  } catch (error: any) {
+    result.success = false;
+    result.msg = `서버 에러. ${error?.message}`;
+    return c.json(result);
+  }
+});
+
+router.post("/verify_token", async (c) => {
+  let result: ResultType = {
+    success: true,
+    data: null,
+    msg: "",
+  };
+  try {
+    const body = await c?.req?.json();
+    let token = String(body?.token ?? "");
+    token = token?.trim() ?? "";
+    console.log(`## token : `, token);
+    if (token) token = utils.decryptData(token);
+    console.log(`## token2 : `, token);
+
+    let payload = utils.verifyToken(token);
+    console.log(`## payload : `, payload);
+    if (!payload?.id) {
+      result.success = false;
+      result.msg = `토큰이 잘못됬습니다`;
+      return c.json(result);
+    }
+    result.data = payload;
     return c.json(result);
   } catch (error: any) {
     result.success = false;
