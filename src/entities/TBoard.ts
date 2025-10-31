@@ -22,11 +22,11 @@ export class TBoard {
   createdDt: Date | null;
 
   @Column("timestamp with time zone", {
-    name: "udated_dt",
+    name: "updated_dt",
     nullable: true,
     default: () => "now()",
   })
-  udatedDt: Date | null;
+  updatedDt: Date | null;
 
   @Column("character varying", {
     name: "title",
