@@ -2,7 +2,9 @@ import { Hono } from "hono";
 import { AppDataSource } from "../data-source1.js";
 import { TBoard } from "../entities/TBoard.js";
 import { TUser } from "../entities/TUser.js";
-import { success } from "zod";
+import { writeFile } from "fs/promises";
+import { join, extname } from "path";
+import * as utils from "../utils/utils.js";
 
 const board = new Hono();
 interface ResultType {
@@ -129,6 +131,60 @@ board.post("/delete", async (c) => {
       }
     );
     result.data = deleteResult;
+    return c.json(result);
+  } catch (error: any) {
+    result.success = false;
+    result.msg = `서버 에러. ${error?.message}`;
+    return c.json(result);
+  }
+});
+
+board.post("/img", async (c) => {
+  let result: ResultType = {
+    success: true,
+    data: null,
+    msg: "",
+  };
+  try {
+    const body = await c?.req?.parseBody();
+    let imgs: any = body["imgs"];
+
+    if (imgs) {
+      const filesArray: File[] = Array.isArray(imgs) ? imgs : [imgs];
+      const results = await Promise.all(
+        filesArray.map(async (file) => {
+          // 파일의 이름, 타입, 크기 등에 접근할 수 있습니다.
+          console.log(
+            `파일 이름: ${file.name}, 타입: ${file.type}, 크기: ${file.size} bytes`
+          );
+
+          // 2. 파일 데이터를 Node.js Buffer로 변환
+          const arrayBuffer = await file.arrayBuffer();
+          const buffer = Buffer.from(arrayBuffer);
+
+          // 3. 저장할 파일 경로 생성 (중복 방지를 위해 타임스탬프 등을 사용하는 것을 권장)
+          const ext = extname(file.name);
+          let uniqueFileName = utils.createUniqueFileName();
+          uniqueFileName = `${uniqueFileName}${ext}`;
+          const savePath = join(process.env.UPLOAD_DIR, uniqueFileName);
+
+          // 4. 하드디스크에 파일 저장
+          await writeFile(savePath, buffer);
+
+          console.log(`파일 저장 완료: ${savePath}`);
+
+          return {
+            name: file.name,
+            size: file.size,
+            type: file.type,
+            uniqueFileName: uniqueFileName,
+            path: savePath, // 저장된 경로를 응답에 포함
+          };
+        })
+      );
+      result.data = results;
+    }
+
     return c.json(result);
   } catch (error: any) {
     result.success = false;
