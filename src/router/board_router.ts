@@ -2,9 +2,10 @@ import { Hono } from "hono";
 import { AppDataSource } from "../data-source1.js";
 import { TBoard } from "../entities/TBoard.js";
 import { TUser } from "../entities/TUser.js";
-import { writeFile } from "fs/promises";
-import { join, extname } from "path";
+import { writeFile, mkdir } from "fs/promises";
+import { join, extname, dirname } from "path";
 import * as utils from "../utils/utils.js";
+import { TBoardImgs } from "../entities/TBoardImgs.js";
 
 const board = new Hono();
 interface ResultType {
@@ -88,6 +89,8 @@ board.post("/upsert", async (c) => {
     let id = Number(body["id"] ?? 0);
     let title = String(body["title"]);
     let content = String(body["content"]);
+    let imgs: any = body["imgs[]"];
+    console.log(`imgs : `, imgs);
     const boardRepo = AppDataSource.getRepository(TBoard);
 
     let newBoard =
@@ -97,6 +100,57 @@ board.post("/upsert", async (c) => {
 
     newBoard = await boardRepo.save(newBoard);
     result.data = newBoard;
+
+    if (imgs) {
+      const filesArray: File[] = Array.isArray(imgs) ? imgs : [imgs];
+      const results = await Promise.all(
+        filesArray.map(async (file) => {
+          // 2. 파일 데이터를 Node.js Buffer로 변환
+          const arrayBuffer = await file.arrayBuffer();
+          const buffer = Buffer.from(arrayBuffer);
+
+          // 3. 저장할 파일 경로 생성 (중복 방지를 위해 타임스탬프 등을 사용하는 것을 권장)
+          const ext = extname(file.name);
+          let uniqueFileName = utils.createUniqueFileName();
+          uniqueFileName = `${uniqueFileName}${ext}`;
+          const savePath = join(process.env.UPLOAD_DIR, uniqueFileName);
+          // ⭐️ 추가된 로직: 폴더가 없으면 생성 ⭐️
+          const dir = dirname(savePath); // 최종 경로에서 디렉터리 경로만 추출
+          try {
+            // { recursive: true } 옵션을 사용하여 중간 디렉터리가 없어도 모두 생성
+            await mkdir(dir, { recursive: true });
+          } catch (error) {
+            // 폴더 생성에 실패하면 오류 로깅 (권장)
+            console.error(`디렉터리 생성 실패: ${dir}`, error);
+            throw new Error("파일 저장 경로 생성 실패");
+          }
+
+          // 4. 하드디스크에 파일 저장
+          await writeFile(savePath, buffer);
+
+          console.log(`파일 저장 완료: ${savePath}`);
+
+          let newimg = new TBoardImgs();
+          newimg.filesize = file?.size ?? 0;
+          newimg.board = newBoard;
+          newimg.imgurl = savePath;
+          newimg.minetype = file.type;
+          newimg.originalFilename = file.name;
+          newimg.uniqueFilename = uniqueFileName;
+          const fileRepo = AppDataSource.getRepository(TBoardImgs);
+          await fileRepo.save(newimg);
+
+          return {
+            name: file.name,
+            size: file.size,
+            type: file.type,
+            uniqueFileName: uniqueFileName,
+            path: savePath, // 저장된 경로를 응답에 포함
+          };
+        })
+      );
+      result.data = results;
+    }
 
     return c.json(result);
   } catch (error: any) {
@@ -153,11 +207,6 @@ board.post("/img", async (c) => {
       const filesArray: File[] = Array.isArray(imgs) ? imgs : [imgs];
       const results = await Promise.all(
         filesArray.map(async (file) => {
-          // 파일의 이름, 타입, 크기 등에 접근할 수 있습니다.
-          console.log(
-            `파일 이름: ${file.name}, 타입: ${file.type}, 크기: ${file.size} bytes`
-          );
-
           // 2. 파일 데이터를 Node.js Buffer로 변환
           const arrayBuffer = await file.arrayBuffer();
           const buffer = Buffer.from(arrayBuffer);
