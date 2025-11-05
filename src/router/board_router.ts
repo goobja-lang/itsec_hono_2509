@@ -21,6 +21,16 @@ board.get("/", async (c) => {
     msg: "",
   };
   try {
+    const authHeader = String(c?.req?.header("Authorization") ?? "");
+    let token: any = authHeader?.split(" ");
+    try {
+      token = token[1];
+      token = utils.decryptData(token);
+    } catch (error: any) {
+      token = "";
+    }
+    const userInfo = utils.verifyToken(token);
+
     const page = Number(c?.req?.query("page") ?? 1);
     const item_limit = Number(c?.req?.query("item_limit") ?? 1000);
     const offset = (page - 1) * item_limit;
@@ -67,7 +77,15 @@ board.get("/get_memo_by_id", async (c) => {
     // 1. 쿼리 스트링에서 'id' 값 가져오기
     const id = Number(c?.req?.query("id") ?? 0);
     const boardRepo = AppDataSource.getRepository(TBoard);
+    const boardImgsRepo = AppDataSource.getRepository(TBoardImgs);
     let data = await boardRepo.findOne({ where: { id: id } });
+    let imgs =
+      (await boardImgsRepo.find({ where: { board: { id: data?.id } } })) ?? [];
+    for (const img of imgs) {
+      if (utils.isPathFormat(img?.imgurl ?? ""))
+        img.imgurl = utils.makeBoardImgURL(img);
+      console.log(`# imgurl: ${img.imgurl}`);
+    }
     result.data = data;
     return c.json(result);
   } catch (error: any) {
@@ -85,19 +103,46 @@ board.post("/upsert", async (c) => {
     msg: "",
   };
   try {
+    const authHeader = String(c?.req?.header("Authorization") ?? "");
+    let token: any = authHeader?.split(" ");
+    try {
+      token = token[1];
+      token = utils.decryptData(token);
+    } catch (error: any) {
+      token = "";
+    }
+    const userInfo = utils.verifyToken(token);
+    const userRepo = AppDataSource.getRepository(TUser);
+    let user = await userRepo.findOne({ where: { id: userInfo?.id ?? 0 } });
+    if (!user?.id) {
+      result.success = false;
+      result.msg = `인증에러. 로그인을 해주세요 `;
+      return c.json(result);
+    }
     const body = await c?.req?.parseBody();
     let id = Number(body["id"] ?? 0);
     let title = String(body["title"]);
     let content = String(body["content"]);
     let imgs: any = body["imgs[]"];
-    console.log(`imgs : `, imgs);
     const boardRepo = AppDataSource.getRepository(TBoard);
 
     let newBoard =
-      (await boardRepo.findOne({ where: { id: id } })) ?? new TBoard();
+      (await boardRepo.findOne({
+        where: { id: id },
+        relations: { user: true },
+      })) ?? new TBoard();
+    console.log(
+      `# newBoard?.id: ${newBoard?.id}, user?.id: ${user?.id}, newBoard.user?.id: ${newBoard.user?.id}`
+    );
+    if (newBoard?.id && user?.id != newBoard.user?.id) {
+      // 수정모드에서, 작성자와 수정하려는 사람이 다를때, 퇴출 시킬거임
+      result.success = false;
+      result.msg = `인증에러. 작성자와 수정자가 다름`;
+      return c.json(result);
+    }
     newBoard.title = title;
     newBoard.content = content;
-
+    newBoard.user = user;
     newBoard = await boardRepo.save(newBoard);
     result.data = newBoard;
 
