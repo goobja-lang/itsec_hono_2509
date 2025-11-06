@@ -116,27 +116,27 @@ board.post("/upsert", async (c) => {
     }
     const userInfo = utils.verifyToken(token);
     const userRepo = AppDataSource.getRepository(TUser);
+
     let user = await userRepo.findOne({ where: { id: userInfo?.id ?? 0 } });
     if (!user?.id) {
       result.success = false;
       result.msg = `인증에러. 로그인을 해주세요 `;
       return c.json(result);
     }
-    const body = await c?.req?.parseBody();
-    let id = Number(body["id"] ?? 0);
-    let title = String(body["title"]);
-    let content = String(body["content"]);
-    let imgs: any = body["imgs[]"];
-    const boardRepo = AppDataSource.getRepository(TBoard);
+    console.log(`# upsert`);
+    const body = await c?.req?.json();
 
+    let id = Number(body?.id ?? 0);
+    let title = String(body?.title ?? "");
+    const htmlContent: string = body?.html ?? "";
+    const jsonContent: any = body?.json ?? null; // JSON 객체
+
+    const boardRepo = AppDataSource.getRepository(TBoard);
     let newBoard =
       (await boardRepo.findOne({
         where: { id: id },
         relations: { user: true },
       })) ?? new TBoard();
-    console.log(
-      `# newBoard?.id: ${newBoard?.id}, user?.id: ${user?.id}, newBoard.user?.id: ${newBoard.user?.id}`
-    );
     if (newBoard?.id && user?.id != newBoard.user?.id) {
       // 수정모드에서, 작성자와 수정하려는 사람이 다를때, 퇴출 시킬거임
       result.success = false;
@@ -144,62 +144,12 @@ board.post("/upsert", async (c) => {
       return c.json(result);
     }
     newBoard.title = title;
-    newBoard.content = content;
+    newBoard.htmlContent = htmlContent;
+    newBoard.jsonContent = jsonContent;
     newBoard.user = user;
     newBoard = await boardRepo.save(newBoard);
     result.data = newBoard;
-
-    if (imgs) {
-      const filesArray: File[] = Array.isArray(imgs) ? imgs : [imgs];
-      const results = await Promise.all(
-        filesArray.map(async (file) => {
-          // 2. 파일 데이터를 Node.js Buffer로 변환
-          const arrayBuffer = await file.arrayBuffer();
-          const buffer = Buffer.from(arrayBuffer);
-
-          // 3. 저장할 파일 경로 생성 (중복 방지를 위해 타임스탬프 등을 사용하는 것을 권장)
-          const ext = extname(file.name);
-          let uniqueFileName = utils.createUniqueFileName();
-          uniqueFileName = `${uniqueFileName}${ext}`;
-          const savePath = join(process.env.UPLOAD_DIR, uniqueFileName);
-          // ⭐️ 추가된 로직: 폴더가 없으면 생성 ⭐️
-          const dir = dirname(savePath); // 최종 경로에서 디렉터리 경로만 추출
-          try {
-            // { recursive: true } 옵션을 사용하여 중간 디렉터리가 없어도 모두 생성
-            await mkdir(dir, { recursive: true });
-          } catch (error) {
-            // 폴더 생성에 실패하면 오류 로깅 (권장)
-            console.error(`디렉터리 생성 실패: ${dir}`, error);
-            throw new Error("파일 저장 경로 생성 실패");
-          }
-
-          // 4. 하드디스크에 파일 저장
-          await writeFile(savePath, buffer);
-
-          console.log(`파일 저장 완료: ${savePath}`);
-
-          let newimg = new TBoardImgs();
-          newimg.filesize = file?.size ?? 0;
-          newimg.board = newBoard;
-          newimg.imgurl = savePath;
-          newimg.minetype = file.type;
-          newimg.originalFilename = file.name;
-          newimg.uniqueFilename = uniqueFileName;
-          const fileRepo = AppDataSource.getRepository(TBoardImgs);
-          await fileRepo.save(newimg);
-
-          return {
-            name: file.name,
-            size: file.size,
-            type: file.type,
-            uniqueFileName: uniqueFileName,
-            path: savePath, // 저장된 경로를 응답에 포함
-          };
-        })
-      );
-      result.data = results;
-    }
-
+    console.log(`# newBoard: `, newBoard);
     return c.json(result);
   } catch (error: any) {
     result.success = false;
